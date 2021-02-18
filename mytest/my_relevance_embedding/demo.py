@@ -17,31 +17,25 @@ class Vgg19FeatureExtractor(torch.nn.Module):
     def __init__(self, vgg_range=12, rgb_range=1):
         super(Vgg19FeatureExtractor, self).__init__()
 
-        self.vgg_range = vgg_range
+        # use vgg19 weights to initialize
+        vgg_pretrained_features = models.vgg19(pretrained=True).features
+        self.slice1 = torch.nn.Sequential()
 
-        if self.vgg_range > 0:
-            # use vgg19 weights to initialize
-            vgg_pretrained_features = models.vgg19(pretrained=True).features
-            self.slice1 = torch.nn.Sequential()
+        for x in range(vgg_range):
+            self.slice1.add_module(str(x), vgg_pretrained_features[x])
 
-            for x in range(self.vgg_range):
-                self.slice1.add_module(str(x), vgg_pretrained_features[x])
+        # 학습을 시켜주지 않기때문에 grad 를 모두 없앤다.
+        for param in self.slice1.parameters():
+            param.requires_grad = False
 
-            # 학습을 시켜주지 않기때문에 grad 를 모두 없앤다.
-            for param in self.slice1.parameters():
-                param.requires_grad = False
-
-            vgg_mean = (0.485, 0.456, 0.406)
-            vgg_std = (0.229 * rgb_range, 0.224 * rgb_range, 0.225 * rgb_range)
-            self.sub_mean = MeanShift(rgb_range, vgg_mean, vgg_std)
+        vgg_mean = (0.485, 0.456, 0.406)
+        vgg_std = (0.229 * rgb_range, 0.224 * rgb_range, 0.225 * rgb_range)
+        self.sub_mean = MeanShift(rgb_range, vgg_mean, vgg_std)
 
     def forward(self, x):
-        if self.vgg_range > 0:
-            x = self.sub_mean(x)
-            x = self.slice1(x)
-            x_lv1 = x
-        else:
-            x_lv1 = x
+        x = self.sub_mean(x)
+        x = self.slice1(x)
+        x_lv1 = x
         return x_lv1
 
 
@@ -84,7 +78,7 @@ def img_tensor_bound_box(t, top_left, bottom_right, bgr):
 
 
 def RGB_patch_tensors_extractor(img_tensor, window_size): # must color image
-    print("RGB_patche_tensors_extractor===============================")
+    print("RGB_patch_tensors_extractor===============================")
     print(img_tensor.shape)
     channel = img_tensor.shape[1]
     img_tensor_unfold = F.unfold(img_tensor, kernel_size=(window_size, window_size), padding=window_size//2).squeeze()
@@ -128,24 +122,33 @@ if __name__ == "__main__":
     ############################################################################################################
 
     # vgg19 feature extractor
-    vgg_range = 12
-    Vgg19FeatureExtractor = Vgg19FeatureExtractor(vgg_range=vgg_range, rgb_range=1).cuda()
 
-    # vgg feature 에서 win size 를 즉정한다. 측정을 위해 win_size 크기의 임의의 패치를 모델에 통과시켜서 output size 를 관찰한다.
-    temp_patch = torch.zeros(3, win_size, win_size)  # vgg19 의 입력은 3 channel 이다.
-    print('temp_patch.shape :', temp_patch.shape)
-    vgg_win_size = Vgg19FeatureExtractor(temp_patch.unsqueeze(0).cuda()).shape[-1]
-    if vgg_win_size % 2 == 0:  # win size 가 홀수인게 편한 듯 하다.-> 짝수면 홀수로 바꿔줌.
-        vgg_win_size += 1
-    print('vgg_win_size :', vgg_win_size)
+    # vgg_range 를 0 으로 하면 영상이 모델을 거치지 않고 그대로 나온다.
+    vgg_range = 12  # 12
 
-    # img_tensor 의 feature 추출. conv 연산을 하려면 [batch, channel, h, w] 형태여야 하기때문에 unsqueeze 사용.
-    img_tensor_feature = Vgg19FeatureExtractor(img_tensor.unsqueeze(0).cuda())
-    print('img_tensor_feature.shape :', img_tensor_feature.shape)
+    if vgg_range > 0:  # -> vgg feature 를 뽑는다.
+        # Vgg19FeatureExtractor 를 선언하는 것 만으로도 gpu 용량을 차지하는 듯 하다?
+        Vgg19FeatureExtractor = Vgg19FeatureExtractor(vgg_range=vgg_range, rgb_range=1).cuda()
 
-    # img_ref_tensor 의 feature 추출.
-    img_ref_tensor_feature = Vgg19FeatureExtractor(img_ref_tensor.unsqueeze(0).cuda())
-    print('img_ref_tensor_feature.shape :', img_ref_tensor_feature.shape)
+        # vgg feature 에서 win size 를 즉정한다. 측정을 위해 win_size 크기의 임의의 패치를 모델에 통과시켜서 output size 를 관찰한다.
+        temp_patch = torch.zeros(3, win_size, win_size)  # vgg19 의 입력은 3 channel 이다.
+        print('temp_patch.shape :', temp_patch.shape)
+        vgg_win_size = Vgg19FeatureExtractor(temp_patch.unsqueeze(0).cuda()).shape[-1]
+        if vgg_win_size % 2 == 0:  # win size 가 홀수인게 편한 듯 하다.-> 짝수면 홀수로 바꿔줌.
+            vgg_win_size += 1
+        print('vgg_win_size :', vgg_win_size)
+
+        # img_tensor 의 feature 추출. conv 연산을 하려면 [batch, channel, h, w] 형태여야 하기때문에 unsqueeze 사용.
+        img_tensor_feature = Vgg19FeatureExtractor(img_tensor.unsqueeze(0).cuda()).detach()
+        print('img_tensor_feature.shape :', img_tensor_feature.shape)
+
+        # img_ref_tensor 의 feature 추출.
+        img_ref_tensor_feature = Vgg19FeatureExtractor(img_ref_tensor.unsqueeze(0).cuda()).detach()
+        print('img_ref_tensor_feature.shape :', img_ref_tensor_feature.shape)
+    else:  # -> 이미지 그대로 사용한다.
+        vgg_win_size = win_size
+        img_tensor_feature = img_tensor.unsqueeze(0)
+        img_ref_tensor_feature = img_ref_tensor.unsqueeze(0)
 
     ############################################################################################################
 
@@ -208,14 +211,8 @@ if __name__ == "__main__":
     _input = img_tensor_feature_patch_norm  # [1, C, win_size, win_size]
     _weight = pool_patches_tensor_norm  # [pool_size, C, win_size, win_size]
 
-    gpu_on = False
-    # cpu 로 해도 빠른듯.
-    if gpu_on:
-        _input.cuda()
-        _weight.cuda()
-
     with torch.no_grad():  # grad 는 여기서 필요 없기때문에 빠른 속도를 위해 꺼준다.
-        similarity_score = F.conv2d(_input, _weight)
+        similarity_score = F.conv2d(_input.cuda(), _weight.cuda())
 
     # 각 pool 의 영상이 img 와 얼마나 비슷한지에 대한 점수 리스트.
     similarity_score = torch.squeeze(similarity_score)
@@ -226,25 +223,25 @@ if __name__ == "__main__":
 
     ############################################################################################################
     # ref 영상에 이 위치를 표시해보자.
-    h_feature_position = similarity_score_argmax // img_ref_tensor_feature.shape[1]
-    w_feature_position = similarity_score_argmax % img_ref_tensor_feature.shape[1]
-
-    h_ref_position = int(h_feature_position * (win_size/vgg_win_size))
-    w_ref_position = int(w_feature_position * (win_size/vgg_win_size))
-
-    ref_tensor_similar_patch = img_ref_tensor[
-                           ...,
-                           h_ref_position:h_ref_position + win_size,
-                           w_ref_position:w_ref_position + win_size]
-
-    cv2.imwrite('ref_tensor_patch.png', tensor2cv2(ref_tensor_similar_patch))
-
-
-    padding = transforms.Pad(int(win_size / 2), fill=0)
-    img_ref_tensor_marked = img_tensor_bound_box(padding(totensor(img_ref)),
-                                                 top_left=(h_ref_position, w_ref_position),
-                                                 bottom_right=(h_ref_position+win_size, w_ref_position+win_size),
-                                                 bgr=(0, 0, 1)
-                                                 )
-    cv2.imwrite('img_ref_tensor_marked.png', tensor2cv2(img_ref_tensor_marked))
-
+    # h_feature_position = similarity_score_argmax // img_ref_tensor_feature.shape[1]
+    # w_feature_position = similarity_score_argmax % img_ref_tensor_feature.shape[1]
+    #
+    # h_ref_position = int(h_feature_position * (win_size/vgg_win_size))
+    # w_ref_position = int(w_feature_position * (win_size/vgg_win_size))
+    #
+    # ref_tensor_similar_patch = img_ref_tensor[
+    #                        ...,
+    #                        h_ref_position:h_ref_position + win_size,
+    #                        w_ref_position:w_ref_position + win_size]
+    #
+    # cv2.imwrite('ref_tensor_patch.png', tensor2cv2(ref_tensor_similar_patch))
+    #
+    #
+    # padding = transforms.Pad(int(win_size / 2), fill=0)
+    # img_ref_tensor_marked = img_tensor_bound_box(padding(totensor(img_ref)),
+    #                                              top_left=(h_ref_position, w_ref_position),
+    #                                              bottom_right=(h_ref_position+win_size, w_ref_position+win_size),
+    #                                              bgr=(0, 0, 1)
+    #                                              )
+    # cv2.imwrite('img_ref_tensor_marked.png', tensor2cv2(img_ref_tensor_marked))
+    #
