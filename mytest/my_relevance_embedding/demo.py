@@ -124,7 +124,7 @@ if __name__ == "__main__":
     # vgg19 feature extractor
 
     # vgg_range 를 0 으로 하면 영상이 모델을 거치지 않고 그대로 나온다.
-    vgg_range = 12  # 12
+    vgg_range = 0  # 12
 
     if vgg_range > 0:  # -> vgg feature 를 뽑는다.
         # Vgg19FeatureExtractor 를 선언하는 것 만으로도 gpu 용량을 차지하는 듯 하다?
@@ -223,25 +223,31 @@ if __name__ == "__main__":
 
     ############################################################################################################
     # ref 영상에 이 위치를 표시해보자.
-    # h_feature_position = similarity_score_argmax // img_ref_tensor_feature.shape[1]
-    # w_feature_position = similarity_score_argmax % img_ref_tensor_feature.shape[1]
-    #
-    # h_ref_position = int(h_feature_position * (win_size/vgg_win_size))
-    # w_ref_position = int(w_feature_position * (win_size/vgg_win_size))
-    #
-    # ref_tensor_similar_patch = img_ref_tensor[
-    #                        ...,
-    #                        h_ref_position:h_ref_position + win_size,
-    #                        w_ref_position:w_ref_position + win_size]
-    #
-    # cv2.imwrite('ref_tensor_patch.png', tensor2cv2(ref_tensor_similar_patch))
-    #
-    #
-    # padding = transforms.Pad(int(win_size / 2), fill=0)
-    # img_ref_tensor_marked = img_tensor_bound_box(padding(totensor(img_ref)),
-    #                                              top_left=(h_ref_position, w_ref_position),
-    #                                              bottom_right=(h_ref_position+win_size, w_ref_position+win_size),
-    #                                              bgr=(0, 0, 1)
-    #                                              )
-    # cv2.imwrite('img_ref_tensor_marked.png', tensor2cv2(img_ref_tensor_marked))
-    #
+    print('img_ref_tensor_feature.shape', img_ref_tensor_feature.shape)
+    # img_ref_tensor_feature.shape -> [1, C, h, w]
+    h_feature_position = similarity_score_argmax // img_ref_tensor_feature.shape[-1]
+    w_feature_position = similarity_score_argmax % img_ref_tensor_feature.shape[-1]
+
+    h_ref_position = int(h_feature_position * (win_size/vgg_win_size))
+    w_ref_position = int(w_feature_position * (win_size/vgg_win_size))
+
+    padding = transforms.Pad(int(win_size / 2), fill=0)
+    img_ref_tensor_padded = padding(img_ref_tensor)
+    ref_tensor_similar_patch = img_ref_tensor_padded[
+                           ...,
+                           h_ref_position:h_ref_position + win_size,
+                           w_ref_position:w_ref_position + win_size]
+    print(h_ref_position, win_size, h_ref_position + win_size)
+    print(w_ref_position, win_size, w_ref_position + win_size)
+    print('img_ref_tensor.shape', img_ref_tensor.shape)
+    print('ref_tensor_similar_patch.shape', ref_tensor_similar_patch.shape)
+
+    cv2.imwrite('ref_tensor_patch.png', tensor2cv2(ref_tensor_similar_patch))
+
+    img_ref_tensor_marked = img_tensor_bound_box(img_ref_tensor_padded,
+                                                 top_left=(h_ref_position, w_ref_position),
+                                                 bottom_right=(h_ref_position+win_size, w_ref_position+win_size),
+                                                 bgr=(0, 0, 1)
+                                                 )
+    cv2.imwrite('img_ref_tensor_marked.png', tensor2cv2(img_ref_tensor_marked))
+

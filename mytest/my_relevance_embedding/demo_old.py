@@ -163,6 +163,7 @@ if __name__ == "__main__":
     cv2.imwrite('ref_tensor_patch.png', tensor2cv2(similar_patch))
 
     # ref 영상에 이 위치를 표시해보자.
+    print('img_ref.shape', img_ref.shape)
     h_position = similarity_score_argmax // img_ref.shape[1]
     w_position = similarity_score_argmax % img_ref.shape[1]
     padding = transforms.Pad(int(win_size / 2), fill=0)
