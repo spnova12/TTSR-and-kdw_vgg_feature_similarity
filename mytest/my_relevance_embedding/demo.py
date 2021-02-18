@@ -9,8 +9,7 @@ import torchvision.transforms as transforms
 
 import numpy as np
 import cv2
-# from PIL import Image
-import matplotlib.pyplot as plt
+from sklearn.feature_extraction import image
 
 
 def tensor2cv2(tensor):
@@ -34,7 +33,21 @@ def tensor2cv2(tensor):
     return npimg
 
 
-from sklearn.feature_extraction import image
+def tensor_bound_box(t, top_left, bottom_right, bgr):
+    # 색 정보를 담고있는 tensor 를 만들어준다.
+    bgr_tensor = torch.tensor([[bgr[0]], [bgr[1]], [bgr[2]]])  # [3, 1]
+    bgr_tensor = bgr_tensor.expand(3, bottom_right[1]-top_left[1])  # right_bottom[1]-left_top[1] 는 윈도우 사이즈.
+
+    # 박스를 그려줄 새 img 를 준비한다.
+    img_tensor_marked = t.clone().detach()
+
+    # 새 img 에 박스를 그려준다.
+    img_tensor_marked[..., top_left[0], top_left[1]:bottom_right[1]] = bgr_tensor
+    img_tensor_marked[..., bottom_right[0], top_left[1]:bottom_right[1]] = bgr_tensor
+    img_tensor_marked[..., top_left[0]:bottom_right[0], top_left[1]] = bgr_tensor
+    img_tensor_marked[..., top_left[0]:bottom_right[0], bottom_right[1]] = bgr_tensor
+
+    return img_tensor_marked
 
 
 def RGB_patches_extractor(img, window_size): # must color image
@@ -67,9 +80,9 @@ if __name__ == "__main__":
     # scale factor 에 맞게 ref 영상을 만들어준다.
     img_ref = cv2.resize(img, None, fx=1/scale_factor, fy=1/scale_factor, interpolation=cv2.INTER_LANCZOS4)
     print('ref 영상 사이즈 :', img_ref.shape)
-    cv2.imwrite('img_ref.png', img_ref)
+    # cv2.imwrite('img_ref.png', img_ref)
 
-    # sliding window size.
+    # sliding window size. 홀수여여 됨.
     win_size = 63
 
     # img_ref 를 win size 로 잘라서 Pool 을 만들어 준다.
@@ -77,7 +90,7 @@ if __name__ == "__main__":
     print('pool_patches.shape :', pool_patches.shape)
 
     # pool 의 patch 한장을 저장해본다.
-    cv2.imwrite('pool_patches_sample.png', pool_patches[0])
+    # cv2.imwrite('pool_patches_sample.png', pool_patches[0])
 
     # pool_patches 를 tensor 로 만들어준다.
     pool_patches = torch.from_numpy(np.array(pool_patches, np.float32, copy=False))
@@ -91,10 +104,18 @@ if __name__ == "__main__":
     print('img_tensor.shape :', img_tensor.shape)
 
     # img_tensor 에서 window 를 하나 뽑아본다.
-    x_position = 100
-    y_position = 100
-    img_tensor_patch = img_tensor[..., x_position:x_position+win_size, y_position:y_position+win_size]
+    h_position = 100
+    w_position = 110
+    img_tensor_patch = img_tensor[..., h_position:h_position+win_size, w_position:w_position+win_size]
     print('img_tensor_patch.shape :', img_tensor_patch.shape)
+
+    # 원본 영상에 이 위치를 표시해보자.
+    img_tensor_marked = tensor_bound_box(img_tensor,
+                                         top_left=(h_position, w_position),
+                                         bottom_right=(h_position+win_size, w_position+win_size),
+                                         bgr=(0, 0, 1)
+                                         )
+    cv2.imwrite('img_tensor_marked.png', tensor2cv2(img_tensor_marked))
 
     # img_tensor_patch 한번 저장해본다.
     cv2.imwrite('img_tensor_patch.png', tensor2cv2(img_tensor_patch))
@@ -111,13 +132,12 @@ if __name__ == "__main__":
     pool_patches_tensor_norm = pool_patches_tensor / _pool_patches_tensor.expand(pool_patches_tensor.shape)
 
     # 잘 노말라이즈 되었나 확인해보자. patch 들 중 아무거나 하나 골라서 길이를 측정해보자. 1 이 나오면 잘 된 것!
-    idx_temp = 2  # 측정해볼 patch 의 인덱스.
-    print(torch.sqrt(torch.sum(pool_patches_tensor_norm[idx_temp]**2)))
+    idx_temp = 10  # 측정해볼 patch 의 인덱스.
+    print('norm 잘 됐는지 검증 :', torch.sqrt(torch.sum(pool_patches_tensor_norm[idx_temp]**2)))
 
     ############################################################################################################
 
     # conv 연산을 통해 유사도를 측정해보자.
-
     # https://pytorch.org/docs/stable/nn.functional.html#conv2d
     # input -> input tensor of shape : (minibatch, in_channels, iH, iW)
     # weight -> filters of shape : (out_channels, in_channels, kH, kW))
@@ -141,6 +161,18 @@ if __name__ == "__main__":
     print('similarity_score_argmax :', similarity_score_argmax)
     similar_patch = pool_patches_tensor[similarity_score_argmax]
     cv2.imwrite('ref_tensor_patch.png', tensor2cv2(similar_patch))
+
+    # ref 영상에 이 위치를 표시해보자.
+    h_position = similarity_score_argmax // img_ref.shape[1]
+    w_position = similarity_score_argmax % img_ref.shape[1]
+    padding = transforms.Pad(int(win_size / 2), fill=0)
+    img_ref_tensor_marked = tensor_bound_box(padding(totensor(img_ref)),
+                                             top_left=(h_position, w_position),
+                                             bottom_right=(h_position+win_size, w_position+win_size),
+                                             bgr=(0, 0, 1)
+                                             )
+    cv2.imwrite('img_ref_tensor_marked.png', tensor2cv2(img_ref_tensor_marked))
+
 
 
 
