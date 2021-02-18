@@ -1,8 +1,8 @@
 # TTSR
 Official PyTorch implementation of the paper [Learning Texture Transformer Network for Image Super-Resolution](https://arxiv.org/abs/2006.04139) accepted in CVPR 2020.
 
-# vgg feature를 이용하녀 similarity 측정 코드  
--> mytest/my_relevance_embedding 에 있음.
+# vgg feature를 이용하 similarity 측정 코드  
+-> mytest/my_relevance_embedding 에 있음.여
 
 ## Contents
 - [Introduction](#introduction)
