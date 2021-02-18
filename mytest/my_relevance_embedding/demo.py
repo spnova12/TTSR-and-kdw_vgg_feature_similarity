@@ -37,31 +37,43 @@ def tensor2cv2(tensor):
 from sklearn.feature_extraction import image
 
 
-def gray_patches_extractor(img, window_size): # must color image
-    M, N = img.shape
-    img = np.pad(img, [int(window_size/2), int(window_size/2)], mode='constant', constant_values=0)
-    img_patches = image.extract_patches_2d(img, (window_size, window_size))
-    return img_patches
+def RGB_patches_extractor(img, window_size): # must color image
+    [M, N, _] = img.shape
+    img_B = np.pad(img[:,:,0], [int(window_size/2), int(window_size/2)], mode='constant', constant_values=0)
+    img_G = np.pad(img[:,:,1], [int(window_size/2), int(window_size/2)], mode='constant', constant_values=0)
+    img_R = np.pad(img[:,:,2], [int(window_size/2), int(window_size/2)], mode='constant', constant_values=0)
+    img_patches_B = image.extract_patches_2d(img_B, (window_size, window_size))
+    img_patches_G = image.extract_patches_2d(img_G, (window_size, window_size))
+    img_patches_R = image.extract_patches_2d(img_R, (window_size, window_size))
+    bbb = img_patches_B.reshape(M*N, window_size,window_size, 1)
+    ggg = img_patches_G.reshape(M*N, window_size,window_size, 1)
+    rrr = img_patches_R.reshape(M*N, window_size,window_size, 1)
+
+    # 이 코드에서는 cv2 형태로 진행할 것이기 때문에 bgr 로 순서 통일해줌.
+    rgb_patches = np.concatenate((bbb, ggg, rrr), axis=3)
+    return rgb_patches
 
 
-###################################
+############################################################################################################
+
 if __name__ == "__main__":
     # scale factor
     scale_factor = 2
 
     # 사용할 영상을 읽어준다.
-    img = cv2.imread("img_002.png", cv2.IMREAD_GRAYSCALE)
+    img = cv2.imread("img_067.png", cv2.IMREAD_COLOR)
     print('입력 영상 사이즈 :', img.shape)
 
     # scale factor 에 맞게 ref 영상을 만들어준다.
     img_ref = cv2.resize(img, None, fx=1/scale_factor, fy=1/scale_factor, interpolation=cv2.INTER_LANCZOS4)
     print('ref 영상 사이즈 :', img_ref.shape)
+    cv2.imwrite('img_ref.png', img_ref)
 
     # sliding window size.
     win_size = 63
 
     # img_ref 를 win size 로 잘라서 Pool 을 만들어 준다.
-    pool_patches = gray_patches_extractor(img_ref, win_size)
+    pool_patches = RGB_patches_extractor(img_ref, win_size)
     print('pool_patches.shape :', pool_patches.shape)
 
     # pool 의 patch 한장을 저장해본다.
@@ -69,6 +81,7 @@ if __name__ == "__main__":
 
     # pool_patches 를 tensor 로 만들어준다.
     pool_patches = torch.from_numpy(np.array(pool_patches, np.float32, copy=False))
+    pool_patches = pool_patches.permute((0, 3, 1, 2)).contiguous()
     pool_patches_tensor = pool_patches.float().div(255)
     print('pool_patches_tensor.shape :', pool_patches_tensor.shape)
 
@@ -86,21 +99,48 @@ if __name__ == "__main__":
     # img_tensor_patch 한번 저장해본다.
     cv2.imwrite('img_tensor_patch.png', tensor2cv2(img_tensor_patch))
 
-    # https://pytorch.org/docs/stable/nn.functional.html#conv2d
-    # input - input tensor of shape : (minibatch, in_channels, iH, iW)
-    # weight - filters of shape : (out_channels, in_channels/groups, kH, kW))
-    _input = img_tensor_patch.unsqueeze(0)  # [1, 1, win_size, win_size]
-    _weight = pool_patches_tensor.unsqueeze(1)  # [pool_size, 1, win_size, win_size]
-    print(_input.shape)
-    print(_weight.shape)
-    similarity_score = F.conv2d(_input, _weight)
-    print(similarity_score.shape)
-    similarity_score = torch.squeeze(similarity_score)
-    
-    # 가장 conv 연산 결과가 큰놈
-    similarity_score_argmax = torch.argmax(similarity_score)  # (1, pool_size, 1, 1)
-    print(similarity_score_argmax)
+    ############################################################################################################
 
+    # img_tensor_patch 를 길이가 1인 patch 로 만들어준다.
+    img_tensor_patch_norm = img_tensor_patch / torch.sqrt(torch.sum(img_tensor_patch**2))
+
+    # pool_patches_tensor 를 길이가 1인 patch 들로 만들어준다.
+    _pool_patches_tensor = torch.sqrt(torch.sum(pool_patches_tensor**2, dim=(1, 2, 3)))
+    pool_size = pool_patches_tensor.shape[0]
+    _pool_patches_tensor = _pool_patches_tensor.view(pool_size, 1, 1, 1)
+    pool_patches_tensor_norm = pool_patches_tensor / _pool_patches_tensor.expand(pool_patches_tensor.shape)
+
+    # 잘 노말라이즈 되었나 확인해보자. patch 들 중 아무거나 하나 골라서 길이를 측정해보자. 1 이 나오면 잘 된 것!
+    idx_temp = 2  # 측정해볼 patch 의 인덱스.
+    print(torch.sqrt(torch.sum(pool_patches_tensor_norm[idx_temp]**2)))
+
+    ############################################################################################################
+
+    # conv 연산을 통해 유사도를 측정해보자.
+
+    # https://pytorch.org/docs/stable/nn.functional.html#conv2d
+    # input -> input tensor of shape : (minibatch, in_channels, iH, iW)
+    # weight -> filters of shape : (out_channels, in_channels, kH, kW))
+    _input = img_tensor_patch_norm.unsqueeze(0)  # [1, 3, win_size, win_size]
+    _weight = pool_patches_tensor_norm  # [pool_size, 3, win_size, win_size]
+
+    gpu_on = False
+    # cpu 로 해도 빠른듯.
+    if gpu_on:
+        _input.cuda()
+        _weight.cuda()
+
+    with torch.no_grad():  # grad 는 여기서 필요 없기때문에 빠른 속도를 위해 꺼준다.
+        similarity_score = F.conv2d(_input, _weight)
+
+    # 각 pool 의 영상이 img 와 얼마나 비슷한지에 대한 점수 리스트.
+    similarity_score = torch.squeeze(similarity_score)
+
+    # 가장 conv 연산 결과가 큰놈 의 index (준상이가 필요한 부분)
+    similarity_score_argmax = torch.argmax(similarity_score)  # (1, pool_size, 1, 1)
+    print('similarity_score_argmax :', similarity_score_argmax)
+    similar_patch = pool_patches_tensor[similarity_score_argmax]
+    cv2.imwrite('ref_tensor_patch.png', tensor2cv2(similar_patch))
 
 
 
