@@ -18,6 +18,13 @@ print('-----------------------')
 print(output.shape)
 print(output)
 
+B = torch.randn(1, 4, 6)
+
+print('\n\nB.shape :', B.shape)
+print('\nB :', B)
+print('\n\noutput * B :\n', torch.bmm(output, B))
+print('\n\noutput * B.shape :\n', torch.bmm(output, B).shape)
+
 
 
 

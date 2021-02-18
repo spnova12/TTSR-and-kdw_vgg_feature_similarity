@@ -195,6 +195,12 @@ class Trainer():
         Ref_t = torch.from_numpy(Ref.transpose((2,0,1))).unsqueeze(0).float().to(self.device)
         Ref_sr_t = torch.from_numpy(Ref_sr.transpose((2,0,1))).unsqueeze(0).float().to(self.device)
 
+        print('\n=====================first input')
+        print('LR_t.shape :', LR_t.shape)
+        print('LR_sr_t.shape :', LR_sr_t.shape)
+        print('Ref_t.shape :', Ref_t.shape)
+        print('Ref_sr_t.shape :', Ref_sr_t.shape)
+
         self.model.eval()
         with torch.no_grad():
             sr, _, _, _, _ = self.model(lr=LR_t, lrsr=LR_sr_t, ref=Ref_t, refsr=Ref_sr_t)

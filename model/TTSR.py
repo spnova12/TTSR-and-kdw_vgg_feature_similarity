@@ -17,6 +17,7 @@ class TTSR(nn.Module):
         self.SearchTransfer = SearchTransfer.SearchTransfer()
 
     def forward(self, lr=None, lrsr=None, ref=None, refsr=None, sr=None):
+        print(type(sr), type(None))
         if (type(sr) != type(None)):
             ### used in transferal perceptual loss
             self.LTE_copy.load_state_dict(self.LTE.state_dict())
@@ -28,7 +29,14 @@ class TTSR(nn.Module):
 
         ref_lv1, ref_lv2, ref_lv3 = self.LTE((ref.detach() + 1.) / 2.)
 
+        print('\n=====================SearchTransfer')
         S, T_lv3, T_lv2, T_lv1 = self.SearchTransfer(lrsr_lv3, refsr_lv3, ref_lv1, ref_lv2, ref_lv3)
+
+        print('\n=====================MainNet input')
+        print('lr.shape :', lr.shape)
+        print('T_lv3.shape :', T_lv3.shape)
+        print('T_lv2.shape :', T_lv2.shape)
+        print('T_lv1.shape :', T_lv1.shape)
 
         sr = self.MainNet(lr, S, T_lv3, T_lv2, T_lv1)
 

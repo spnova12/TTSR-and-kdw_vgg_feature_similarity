@@ -35,11 +35,16 @@ class LTE(torch.nn.Module):
         self.sub_mean = MeanShift(rgb_range, vgg_mean, vgg_std)
 
     def forward(self, x):
+        print('================LTE')
+        print(x.shape)
         x = self.sub_mean(x)
         x = self.slice1(x)
         x_lv1 = x
+        print(x.shape)
         x = self.slice2(x)
         x_lv2 = x
+        print(x.shape)
         x = self.slice3(x)
         x_lv3 = x
+        print(x.shape)
         return x_lv1, x_lv2, x_lv3

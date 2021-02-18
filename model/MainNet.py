@@ -201,7 +201,11 @@ class MainNet(nn.Module):
 
     def forward(self, x, S=None, T_lv3=None, T_lv2=None, T_lv1=None):
         ### shallow feature extraction
+        print('\n=================main')
+        print('x :', x.shape)
         x = self.SFE(x)
+        print('SFE(x) :', x.shape)
+
 
         ### stage11
         x11 = x
